@@ -467,7 +467,7 @@ html_content += f"""
 </html>
 """
 
-output_path = r'c:\Users\f2302\Desktop\報修分析\Google_Style_KPI_Dashboard.html'
+output_path = r'c:\Users\f2302\Desktop\報修分析\index.html'
 with open(output_path, 'w', encoding='utf-8') as f:
     f.write(html_content)
 
