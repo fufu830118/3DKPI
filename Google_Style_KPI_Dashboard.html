@@ -1,0 +1,462 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Style KPI Analysis Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        :root {
+            --google-blue: #4285F4;
+            --google-red: #EA4335;
+            --google-yellow: #FBBC05;
+            --google-green: #34A853;
+            --bg-color: #F8F9FA;
+            --text-primary: #202124;
+            --text-secondary: #5F6368;
+            --card-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            --sidebar-width: 320px;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Google Sans', 'Noto Sans TC', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden; /* 防止雙卷軸 */
+            height: 100vh;
+            display: flex;
+        }
+
+        /* 側邊欄懸浮卡片設計 */
+        #sidebar {
+            width: var(--sidebar-width);
+            height: 94vh;
+            margin: 3vh 0 3vh 20px;
+            background: #FFFFFF;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            position: relative;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+        
+        #sidebar-header {
+            padding: 24px 24px 16px 24px;
+            border-bottom: 1px solid #F1F3F4;
+        }
+        
+        h1 {
+            font-size: 20px;
+            font-weight: 500;
+            margin: 0 0 12px 0;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+        }
+        
+        .badge-container {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .badge {
+            background: #F1F3F4;
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        #personnel-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+        
+        /* 隱藏卷軸但保留功能 */
+        #personnel-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        #personnel-list::-webkit-scrollbar-thumb {
+            background-color: #DADCE0;
+            border-radius: 3px;
+        }
+
+        .person-card {
+            background: #FFFFFF;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 2px rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            border-left: 0; /* 移除舊的 border */
+        }
+        
+        .person-card:hover {
+            box-shadow: 0 4px 8px 3px rgba(60,64,67,0.15);
+            transform: translateY(-1px);
+        }
+        
+        .person-card.active {
+            background: #F8F9FA;
+            box-shadow: inset 0 0 0 2px var(--google-blue);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .name-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .emoji-icon { 
+            font-size: 20px; 
+            margin-bottom: 4px;
+        }
+        
+        .name { 
+            font-weight: 500; 
+            font-size: 16px; 
+            color: var(--text-primary);
+        }
+        
+        .count-badge { 
+            background: #F1F3F4;
+            color: var(--text-primary);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        
+        .role-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            background: #F8F9FA; /* Default fallback */
+        }
+        
+        .details {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 16px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .progress-container {
+            width: 100%;
+            height: 4px;
+            background-color: #F1F3F4;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease-out;
+        }
+
+        /* 主畫面圖表區 */
+        #main-content {
+            flex: 1;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* 確保 Plotly 圖表填滿容器 */
+        .plotly-graph-div, #main-content > div {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        /* 浮水印/標題 */
+        .chart-overlay-title {
+            position: absolute;
+            bottom: 30px; /* 改到底部 */
+            right: 30px;
+            text-align: right;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .chart-overlay-title h2 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 400;
+            color: var(--text-primary);
+        }
+        
+        .chart-overlay-title p {
+            margin: 8px 0 0 0;
+            color: var(--text-secondary);
+        }
+
+    </style>
+</head>
+<body>
+
+    <aside id="sidebar">
+        <header id="sidebar-header">
+            <h1>維修人員配置</h1>
+            <div class="badge-container">
+                <div class="badge">總案件: 198</div>
+                <div class="badge">人員: 10</div>
+            </div>
+        </header>
+        
+        <div id="personnel-list">
+
+            <div class="person-card" onclick="focusPerson('陳世霖')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🔧</span>
+                        <span class="name">陳世霖</span>
+                    </div>
+                    <span class="count-badge">95</span>
+                </div>
+                
+                <div class="role-pill" style="color: #EA4335; border: 1px solid #EA433533; background: #EA433511;">
+                    實體損壞、水電問題
+                </div>
+                
+                <div class="details">漏水、水管、馬桶、燈具、門壞、電視硬體、家具</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 100.0%; background-color: #EA4335;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('彭柏翔')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">⚙️</span>
+                        <span class="name">彭柏翔</span>
+                    </div>
+                    <span class="count-badge">40</span>
+                </div>
+                
+                <div class="role-pill" style="color: #4285F4; border: 1px solid #4285F433; background: #4285F411;">
+                    電力、空調、環控
+                </div>
+                
+                <div class="details">插座、冷氣、風管、環控偵測器</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 42.10526315789473%; background-color: #4285F4;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('蘇昱融')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🚨</span>
+                        <span class="name">蘇昱融</span>
+                    </div>
+                    <span class="count-badge">4</span>
+                </div>
+                
+                <div class="role-pill" style="color: #E91E63; border: 1px solid #E91E6333; background: #E91E6311;">
+                    警報、門禁軟體
+                </div>
+                
+                <div class="details">警報、門禁錯誤、監控軟體、中興保全</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 4.2105263157894735%; background-color: #E91E63;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('鄭易佳')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🧽</span>
+                        <span class="name">鄭易佳</span>
+                    </div>
+                    <span class="count-badge">20</span>
+                </div>
+                
+                <div class="role-pill" style="color: #34A853; border: 1px solid #34A85333; background: #34A85311;">
+                    清潔與衛生
+                </div>
+                
+                <div class="details">髒污、異味、垃圾、衛生紙、咖啡機</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 21.052631578947366%; background-color: #34A853;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('秦婉蓉')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🧷</span>
+                        <span class="name">秦婉蓉</span>
+                    </div>
+                    <span class="count-badge">2</span>
+                </div>
+                
+                <div class="role-pill" style="color: #FBBC05; border: 1px solid #FBBC0533; background: #FBBC0511;">
+                    行政用品、HDMI
+                </div>
+                
+                <div class="details">文具、名片、HDMI線、訪客報到機</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 2.1052631578947367%; background-color: #FBBC05;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('吳昭穎')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🖨️</span>
+                        <span class="name">吳昭穎</span>
+                    </div>
+                    <span class="count-badge">1</span>
+                </div>
+                
+                <div class="role-pill" style="color: #8E24AA; border: 1px solid #8E24AA33; background: #8E24AA11;">
+                    事務機設備
+                </div>
+                
+                <div class="details">影印機、印表機、掃描器、卡紙</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 1.0526315789473684%; background-color: #8E24AA;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('陳德儀')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🚗</span>
+                        <span class="name">陳德儀</span>
+                    </div>
+                    <span class="count-badge">6</span>
+                </div>
+                
+                <div class="role-pill" style="color: #FF6D01; border: 1px solid #FF6D0133; background: #FF6D0111;">
+                    差勤、停車、標示
+                </div>
+                
+                <div class="details">停車位、標示貼紙、桶裝水</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 6.315789473684211%; background-color: #FF6D01;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('梁時豪')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">♻️</span>
+                        <span class="name">梁時豪</span>
+                    </div>
+                    <span class="count-badge">1</span>
+                </div>
+                
+                <div class="role-pill" style="color: #607D8B; border: 1px solid #607D8B33; background: #607D8B11;">
+                    行政權限、廢棄物
+                </div>
+                
+                <div class="details">文件銷毀、權限管理</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 1.0526315789473684%; background-color: #607D8B;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('曾誌偉')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🧪</span>
+                        <span class="name">曾誌偉</span>
+                    </div>
+                    <span class="count-badge">2</span>
+                </div>
+                
+                <div class="role-pill" style="color: #795548; border: 1px solid #79554833; background: #79554811;">
+                    化學品、保全管理
+                </div>
+                
+                <div class="details">化學品、承攬商、保全</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 2.1052631578947367%; background-color: #795548;"></div>
+                </div>
+            </div>
+    
+            <div class="person-card" onclick="focusPerson('鄭志峯')">
+                <div class="card-header">
+                    <div class="name-group">
+                        <span class="emoji-icon">🔨</span>
+                        <span class="name">鄭志峯</span>
+                    </div>
+                    <span class="count-badge">27</span>
+                </div>
+                
+                <div class="role-pill" style="color: #9E9E9E; border: 1px solid #9E9E9E33; background: #9E9E9E11;">
+                    一般維修
+                </div>
+                
+                <div class="details">一般維修支援</div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: 28.421052631578945%; background-color: #9E9E9E;"></div>
+                </div>
+            </div>
+    
+        </div>
+    </aside>
+
+    <main id="main-content">
+        <div class="chart-overlay-title">
+            <h2>KPI Analytics</h2>
+            <p>維修數據 3D 可視化分析</p>
+        </div>
+        <div>                        <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+        <script charset="utf-8" src="https://cdn.plot.ly/plotly-3.3.0.min.js" integrity="sha256-bO3dS6yCpk9aK4gUpNELtCiDeSYvGYnK7jFI58NQnHI=" crossorigin="anonymous"></script>                <div id="2a1a7180-f181-4d76-b272-14f5e17f4555" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("2a1a7180-f181-4d76-b272-14f5e17f4555")) {                    Plotly.newPlot(                        "2a1a7180-f181-4d76-b272-14f5e17f4555",                        [{"color":"#4285F4","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udda8\ufe0f \u5433\u662d\u7a4e\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u5176\u4ed6\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u5176\u4ed6","opacity":1.0,"showlegend":false,"x":[-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25,-0.25],"y":[-0.25,-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[-0.25,0.25,0.25,-0.25,-0.25,null,-0.25,0.25,0.25,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25,null,-0.25,-0.25],"y":[-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#4285F4","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddea \u66fe\u8a8c\u5049\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u5176\u4ed6\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u5176\u4ed6","opacity":1.0,"showlegend":false,"x":[1.75,2.25,2.25,1.75,1.75,2.25,2.25,1.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[1.75,2.25,2.25,1.75,1.75,null,1.75,2.25,2.25,1.75,1.75,null,1.75,1.75,null,2.25,2.25,null,2.25,2.25,null,1.75,1.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#4285F4","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u5176\u4ed6\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e3\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u5176\u4ed6","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25],"z":[0,0,0,0,3,3,3,3],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25],"z":[0,0,0,0,0,null,3,3,3,3,3,null,0,3,null,0,3,null,0,3,null,0,3],"type":"scatter3d"},{"color":"#4285F4","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddfd \u912d\u6613\u4f73\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u5176\u4ed6\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e18\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u5176\u4ed6","opacity":1.0,"showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,7.25,7.25,6.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25],"z":[0,0,0,0,18,18,18,18],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,null,6.75,7.25,7.25,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25,null,6.75,6.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25],"z":[0,0,0,0,0,null,18,18,18,18,18,null,0,18,null,0,18,null,0,18,null,0,18],"type":"scatter3d"},{"color":"#4285F4","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u5176\u4ed6\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e4\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u5176\u4ed6","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,-0.25,0.25,0.25],"z":[0,0,0,0,4,4,4,4],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,0.25,0.25,-0.25,null,-0.25,-0.25,null,-0.25,-0.25,null,0.25,0.25,null,0.25,0.25],"z":[0,0,0,0,0,null,4,4,4,4,4,null,0,4,null,0,4,null,0,4,null,0,4],"type":"scatter3d"},{"color":"#EA4335","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\u2699\ufe0f \u5f6d\u67cf\u7fd4\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6703\u8b70\u5ba4\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e7\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6703\u8b70\u5ba4\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,1.25,1.25,0.75],"y":[0.75,0.75,1.25,1.25,0.75,0.75,1.25,1.25],"z":[0,0,0,0,7,7,7,7],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,null,0.75,1.25,1.25,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25,null,0.75,0.75],"y":[0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25],"z":[0,0,0,0,0,null,7,7,7,7,7,null,0,7,null,0,7,null,0,7,null,0,7],"type":"scatter3d"},{"color":"#EA4335","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddf7 \u79e6\u5a49\u84c9\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6703\u8b70\u5ba4\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e2\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6703\u8b70\u5ba4\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[3.75,4.25,4.25,3.75,3.75,4.25,4.25,3.75],"y":[0.75,0.75,1.25,1.25,0.75,0.75,1.25,1.25],"z":[0,0,0,0,2,2,2,2],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[3.75,4.25,4.25,3.75,3.75,null,3.75,4.25,4.25,3.75,3.75,null,3.75,3.75,null,4.25,4.25,null,4.25,4.25,null,3.75,3.75],"y":[0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25],"z":[0,0,0,0,0,null,2,2,2,2,2,null,0,2,null,0,2,null,0,2,null,0,2],"type":"scatter3d"},{"color":"#EA4335","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6703\u8b70\u5ba4\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6703\u8b70\u5ba4\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[0.75,0.75,1.25,1.25,0.75,0.75,1.25,1.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#EA4335","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddfd \u912d\u6613\u4f73\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6703\u8b70\u5ba4\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6703\u8b70\u5ba4\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,7.25,7.25,6.75],"y":[0.75,0.75,1.25,1.25,0.75,0.75,1.25,1.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,null,6.75,7.25,7.25,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25,null,6.75,6.75],"y":[0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#EA4335","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6703\u8b70\u5ba4\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e3\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6703\u8b70\u5ba4\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[0.75,0.75,1.25,1.25,0.75,0.75,1.25,1.25],"z":[0,0,0,0,3,3,3,3],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,1.25,1.25,0.75,null,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25],"z":[0,0,0,0,0,null,3,3,3,3,3,null,0,3,null,0,3,null,0,3,null,0,3],"type":"scatter3d"},{"color":"#FBBC05","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6c34\u96fb\u8a2d\u65bd\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e5\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6c34\u96fb\u8a2d\u65bd","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[1.75,1.75,2.25,2.25,1.75,1.75,2.25,2.25],"z":[0,0,0,0,5,5,5,5],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,null,1.75,1.75,null,2.25,2.25,null,2.25,2.25],"z":[0,0,0,0,0,null,5,5,5,5,5,null,0,5,null,0,5,null,0,5,null,0,5],"type":"scatter3d"},{"color":"#FBBC05","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddfd \u912d\u6613\u4f73\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6c34\u96fb\u8a2d\u65bd\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6c34\u96fb\u8a2d\u65bd","opacity":1.0,"showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,7.25,7.25,6.75],"y":[1.75,1.75,2.25,2.25,1.75,1.75,2.25,2.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[6.75,7.25,7.25,6.75,6.75,null,6.75,7.25,7.25,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25,null,6.75,6.75],"y":[1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,null,1.75,1.75,null,2.25,2.25,null,2.25,2.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#FBBC05","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u6c34\u96fb\u8a2d\u65bd\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e56\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u6c34\u96fb\u8a2d\u65bd","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[1.75,1.75,2.25,2.25,1.75,1.75,2.25,2.25],"z":[0,0,0,0,56,56,56,56],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,2.25,2.25,1.75,null,1.75,1.75,null,1.75,1.75,null,2.25,2.25,null,2.25,2.25],"z":[0,0,0,0,0,null,56,56,56,56,56,null,0,56,null,0,56,null,0,56,null,0,56],"type":"scatter3d"},{"color":"#34A853","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u7167\u660e\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u7167\u660e\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[2.75,2.75,3.25,3.25,2.75,2.75,3.25,3.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[2.75,2.75,3.25,3.25,2.75,null,2.75,2.75,3.25,3.25,2.75,null,2.75,2.75,null,2.75,2.75,null,3.25,3.25,null,3.25,3.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#34A853","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u7167\u660e\u8a2d\u5099\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e8\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u7167\u660e\u8a2d\u5099","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[2.75,2.75,3.25,3.25,2.75,2.75,3.25,3.25],"z":[0,0,0,0,8,8,8,8],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[2.75,2.75,3.25,3.25,2.75,null,2.75,2.75,3.25,3.25,2.75,null,2.75,2.75,null,2.75,2.75,null,3.25,3.25,null,3.25,3.25],"z":[0,0,0,0,0,null,8,8,8,8,8,null,0,8,null,0,8,null,0,8,null,0,8],"type":"scatter3d"},{"color":"#FF6D01","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\u2699\ufe0f \u5f6d\u67cf\u7fd4\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u7a7a\u8abf\u74b0\u63a7\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e20\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u7a7a\u8abf\u74b0\u63a7","opacity":1.0,"showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,1.25,1.25,0.75],"y":[3.75,3.75,4.25,4.25,3.75,3.75,4.25,4.25],"z":[0,0,0,0,20,20,20,20],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,null,0.75,1.25,1.25,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25,null,0.75,0.75],"y":[3.75,3.75,4.25,4.25,3.75,null,3.75,3.75,4.25,4.25,3.75,null,3.75,3.75,null,3.75,3.75,null,4.25,4.25,null,4.25,4.25],"z":[0,0,0,0,0,null,20,20,20,20,20,null,0,20,null,0,20,null,0,20,null,0,20],"type":"scatter3d"},{"color":"#46BDC6","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\u2699\ufe0f \u5f6d\u67cf\u7fd4\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u8fa6\u516c\u74b0\u5883\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e2\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u8fa6\u516c\u74b0\u5883","opacity":1.0,"showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,1.25,1.25,0.75],"y":[4.75,4.75,5.25,5.25,4.75,4.75,5.25,5.25],"z":[0,0,0,0,2,2,2,2],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,null,0.75,1.25,1.25,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25,null,0.75,0.75],"y":[4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,null,4.75,4.75,null,5.25,5.25,null,5.25,5.25],"z":[0,0,0,0,0,null,2,2,2,2,2,null,0,2,null,0,2,null,0,2,null,0,2],"type":"scatter3d"},{"color":"#46BDC6","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u8fa6\u516c\u74b0\u5883\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e15\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u8fa6\u516c\u74b0\u5883","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[4.75,4.75,5.25,5.25,4.75,4.75,5.25,5.25],"z":[0,0,0,0,15,15,15,15],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,null,4.75,4.75,null,5.25,5.25,null,5.25,5.25],"z":[0,0,0,0,0,null,15,15,15,15,15,null,0,15,null,0,15,null,0,15,null,0,15],"type":"scatter3d"},{"color":"#46BDC6","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u8fa6\u516c\u74b0\u5883\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e18\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u8fa6\u516c\u74b0\u5883","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[4.75,4.75,5.25,5.25,4.75,4.75,5.25,5.25],"z":[0,0,0,0,18,18,18,18],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,null,4.75,4.75,null,5.25,5.25,null,5.25,5.25],"z":[0,0,0,0,0,null,18,18,18,18,18,null,0,18,null,0,18,null,0,18,null,0,18],"type":"scatter3d"},{"color":"#46BDC6","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\ude97 \u9673\u5fb7\u5100\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u8fa6\u516c\u74b0\u5883\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e6\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u8fa6\u516c\u74b0\u5883","opacity":1.0,"showlegend":false,"x":[8.75,9.25,9.25,8.75,8.75,9.25,9.25,8.75],"y":[4.75,4.75,5.25,5.25,4.75,4.75,5.25,5.25],"z":[0,0,0,0,6,6,6,6],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[8.75,9.25,9.25,8.75,8.75,null,8.75,9.25,9.25,8.75,8.75,null,8.75,8.75,null,9.25,9.25,null,9.25,9.25,null,8.75,8.75],"y":[4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,5.25,5.25,4.75,null,4.75,4.75,null,4.75,4.75,null,5.25,5.25,null,5.25,5.25],"z":[0,0,0,0,0,null,6,6,6,6,6,null,0,6,null,0,6,null,0,6,null,0,6],"type":"scatter3d"},{"color":"#7B1FA2","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83e\uddea \u66fe\u8a8c\u5049\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u9580\u7981\u4fdd\u5168\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u9580\u7981\u4fdd\u5168","opacity":1.0,"showlegend":false,"x":[1.75,2.25,2.25,1.75,1.75,2.25,2.25,1.75],"y":[5.75,5.75,6.25,6.25,5.75,5.75,6.25,6.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[1.75,2.25,2.25,1.75,1.75,null,1.75,2.25,2.25,1.75,1.75,null,1.75,1.75,null,2.25,2.25,null,2.25,2.25,null,1.75,1.75],"y":[5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#7B1FA2","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\u267b\ufe0f \u6881\u6642\u8c6a\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u9580\u7981\u4fdd\u5168\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u9580\u7981\u4fdd\u5168","opacity":1.0,"showlegend":false,"x":[2.75,3.25,3.25,2.75,2.75,3.25,3.25,2.75],"y":[5.75,5.75,6.25,6.25,5.75,5.75,6.25,6.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[2.75,3.25,3.25,2.75,2.75,null,2.75,3.25,3.25,2.75,2.75,null,2.75,2.75,null,3.25,3.25,null,3.25,3.25,null,2.75,2.75],"y":[5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#7B1FA2","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udea8 \u8607\u6631\u878d\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u9580\u7981\u4fdd\u5168\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e4\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u9580\u7981\u4fdd\u5168","opacity":1.0,"showlegend":false,"x":[4.75,5.25,5.25,4.75,4.75,5.25,5.25,4.75],"y":[5.75,5.75,6.25,6.25,5.75,5.75,6.25,6.25],"z":[0,0,0,0,4,4,4,4],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[4.75,5.25,5.25,4.75,4.75,null,4.75,5.25,5.25,4.75,4.75,null,4.75,4.75,null,5.25,5.25,null,5.25,5.25,null,4.75,4.75],"y":[5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25],"z":[0,0,0,0,0,null,4,4,4,4,4,null,0,4,null,0,4,null,0,4,null,0,4],"type":"scatter3d"},{"color":"#7B1FA2","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u9580\u7981\u4fdd\u5168\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u9580\u7981\u4fdd\u5168","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[5.75,5.75,6.25,6.25,5.75,5.75,6.25,6.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#7B1FA2","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u9580\u7981\u4fdd\u5168\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e5\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u9580\u7981\u4fdd\u5168","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[5.75,5.75,6.25,6.25,5.75,5.75,6.25,6.25],"z":[0,0,0,0,5,5,5,5],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,6.25,6.25,5.75,null,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25],"z":[0,0,0,0,0,null,5,5,5,5,5,null,0,5,null,0,5,null,0,5,null,0,5],"type":"scatter3d"},{"color":"#E91E63","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\u2699\ufe0f \u5f6d\u67cf\u7fd4\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u96fb\u529b\u7cfb\u7d71\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e11\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u96fb\u529b\u7cfb\u7d71","opacity":1.0,"showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,1.25,1.25,0.75],"y":[6.75,6.75,7.25,7.25,6.75,6.75,7.25,7.25],"z":[0,0,0,0,11,11,11,11],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[0.75,1.25,1.25,0.75,0.75,null,0.75,1.25,1.25,0.75,0.75,null,0.75,0.75,null,1.25,1.25,null,1.25,1.25,null,0.75,0.75],"y":[6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25],"z":[0,0,0,0,0,null,11,11,11,11,11,null,0,11,null,0,11,null,0,11,null,0,11],"type":"scatter3d"},{"color":"#E91E63","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd28 \u912d\u5fd7\u5cef\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u96fb\u529b\u7cfb\u7d71\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u96fb\u529b\u7cfb\u7d71","opacity":1.0,"showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,6.25,6.25,5.75],"y":[6.75,6.75,7.25,7.25,6.75,6.75,7.25,7.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[5.75,6.25,6.25,5.75,5.75,null,5.75,6.25,6.25,5.75,5.75,null,5.75,5.75,null,6.25,6.25,null,6.25,6.25,null,5.75,5.75],"y":[6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"color":"#E91E63","flatshading":true,"hoverinfo":"text","hovertext":"\u003cb\u003e\ud83d\udd27 \u9673\u4e16\u9716\u003c\u002fb\u003e\n\u003cbr\u003e\ud83d\udcc2 \u985e\u5225: \u96fb\u529b\u7cfb\u7d71\n\u003cbr\u003e\ud83d\udcca \u6578\u91cf: \u003cb\u003e1\u003c\u002fb\u003e\n\u003cbr\u003e\u003ci style=\"font-size:10px; color:#ddd;\"\u003e\u9ede\u64ca\u67e5\u770b\u8a73\u60c5\u003c\u002fi\u003e","i":[0,0,4,4,0,0,1,1,2,2,0,0],"j":[2,3,5,6,1,5,2,6,3,7,4,7],"k":[1,2,6,7,5,4,6,5,7,6,7,3],"lighting":{"ambient":1.0,"diffuse":0.0,"fresnel":0.0,"roughness":1.0,"specular":0.0},"name":"\u96fb\u529b\u7cfb\u7d71","opacity":1.0,"showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,8.25,8.25,7.75],"y":[6.75,6.75,7.25,7.25,6.75,6.75,7.25,7.25],"z":[0,0,0,0,1,1,1,1],"type":"mesh3d"},{"hoverinfo":"skip","line":{"color":"black","width":3},"mode":"lines","showlegend":false,"x":[7.75,8.25,8.25,7.75,7.75,null,7.75,8.25,8.25,7.75,7.75,null,7.75,7.75,null,8.25,8.25,null,8.25,8.25,null,7.75,7.75],"y":[6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,7.25,7.25,6.75,null,6.75,6.75,null,6.75,6.75,null,7.25,7.25,null,7.25,7.25],"z":[0,0,0,0,0,null,1,1,1,1,1,null,0,1,null,0,1,null,0,1,null,0,1],"type":"scatter3d"},{"marker":{"color":"#4285F4","size":10},"mode":"markers","name":"\u5176\u4ed6","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#EA4335","size":10},"mode":"markers","name":"\u6703\u8b70\u5ba4\u8a2d\u5099","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#FBBC05","size":10},"mode":"markers","name":"\u6c34\u96fb\u8a2d\u65bd","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#34A853","size":10},"mode":"markers","name":"\u7167\u660e\u8a2d\u5099","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#FF6D01","size":10},"mode":"markers","name":"\u7a7a\u8abf\u74b0\u63a7","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#46BDC6","size":10},"mode":"markers","name":"\u8fa6\u516c\u74b0\u5883","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#7B1FA2","size":10},"mode":"markers","name":"\u9580\u7981\u4fdd\u5168","x":[null],"y":[null],"z":[null],"type":"scatter3d"},{"marker":{"color":"#E91E63","size":10},"mode":"markers","name":"\u96fb\u529b\u7cfb\u7d71","x":[null],"y":[null],"z":[null],"type":"scatter3d"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"margin":{"l":0,"r":0,"t":0,"b":0},"scene":{"xaxis":{"title":{"font":{"size":16,"color":"#5F6368"},"text":"\u7dad\u4fee\u4eba\u54e1"},"tickfont":{"size":12,"color":"#3C4043"},"tickmode":"array","tickvals":[0,1,2,3,4,5,6,7,8,9],"ticktext":["\ud83d\udda8\ufe0f \u5433\u662d\u7a4e","\u2699\ufe0f \u5f6d\u67cf\u7fd4","\ud83e\uddea \u66fe\u8a8c\u5049","\u267b\ufe0f \u6881\u6642\u8c6a","\ud83e\uddf7 \u79e6\u5a49\u84c9","\ud83d\udea8 \u8607\u6631\u878d","\ud83d\udd28 \u912d\u5fd7\u5cef","\ud83e\uddfd \u912d\u6613\u4f73","\ud83d\udd27 \u9673\u4e16\u9716","\ud83d\ude97 \u9673\u5fb7\u5100"],"backgroundcolor":"#F8F9FA","gridcolor":"#E8EAED","showbackground":true},"yaxis":{"title":{"font":{"size":16,"color":"#5F6368"},"text":"\u554f\u984c\u985e\u5225"},"tickfont":{"size":12,"color":"#3C4043"},"tickmode":"array","tickvals":[0,1,2,3,4,5,6,7],"ticktext":["\u5176\u4ed6","\u6703\u8b70\u5ba4\u8a2d\u5099","\u6c34\u96fb\u8a2d\u65bd","\u7167\u660e\u8a2d\u5099","\u7a7a\u8abf\u74b0\u63a7","\u8fa6\u516c\u74b0\u5883","\u9580\u7981\u4fdd\u5168","\u96fb\u529b\u7cfb\u7d71"],"backgroundcolor":"#F8F9FA","gridcolor":"#E8EAED","showbackground":true},"zaxis":{"title":{"font":{"size":16,"color":"#5F6368"},"text":"\u6848\u4ef6\u6578"},"tickfont":{"size":12,"color":"#3C4043"},"backgroundcolor":"#F8F9FA","gridcolor":"#E8EAED","showbackground":true},"camera":{"eye":{"x":1.4,"y":-1.4,"z":0.6},"center":{"x":0,"y":0,"z":-0.2}},"aspectratio":{"x":2,"y":1.2,"z":0.8},"aspectmode":"manual"},"legend":{"font":{"size":13,"color":"#3C4043"},"yanchor":"top","y":0.95,"xanchor":"right","x":0.95,"bgcolor":"rgba(255, 255, 255, 0.9)","bordercolor":"#E8EAED","borderwidth":1},"paper_bgcolor":"rgba(0,0,0,0)","plot_bgcolor":"rgba(0,0,0,0)"},                        {"displayModeBar": true, "responsive": true}                    )                };            </script>        </div>
+    </main>
+
+    <script>
+        // 簡單互動邏輯
+        function focusPerson(name) {
+            // 點擊卡片時的高亮效果
+            document.querySelectorAll('.person-card').forEach(card => card.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            // 這裡未來可以加入控制 Plotly Camera 的邏輯
+            console.log("Focus on:", name);
+        }
+    </script>
+
+</body>
+</html>
